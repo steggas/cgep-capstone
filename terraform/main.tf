@@ -111,8 +111,11 @@ resource "aws_dynamodb_table" "intake" {
     type = "S"
   }
 
-  # No server_side_encryption block. Defaults to AWS-owned key.
-  # GAP-02: capstone learner expected to add this with a customer-owned key.
+  # GAP-02 closed: customer CMK (HIPAA 164.312(a)(2)(iv)).
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.phi.arn
+  }
 }
 
 ######################################################################
@@ -167,7 +170,7 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-# GAP-07: deliberately broad permissions on the workload data stores.
+# GAP-07 closed: least privilege on PHI stores (HIPAA 164.312(a)(1)).
 resource "aws_iam_role_policy" "lambda_inline" {
   name = "intake-data-access"
   role = aws_iam_role.lambda.id
@@ -176,27 +179,47 @@ resource "aws_iam_role_policy" "lambda_inline" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = "dynamodb:*"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem",
+          "dynamodb:DescribeTable",
+        ]
         Resource = aws_dynamodb_table.intake.arn
       },
       {
-        Effect   = "Allow"
-        Action   = "s3:*"
-        Resource = ["${aws_s3_bucket.uploads.arn}", "${aws_s3_bucket.uploads.arn}/*"]
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:AbortMultipartUpload",
+        ]
+        Resource = ["${aws_s3_bucket.uploads.arn}/*"]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt",
+          "kms:DescribeKey",
+          "kms:GenerateDataKey",
+        ]
+        Resource = aws_kms_key.phi.arn
       }
     ]
   })
 }
 
 resource "aws_lambda_function" "intake" {
-  function_name    = "${local.name_prefix}-handler-${local.suffix}"
-  role             = aws_iam_role.lambda.arn
-  handler          = "handler.handler"
-  runtime          = "python3.12"
-  filename         = data.archive_file.handler.output_path
-  source_code_hash = data.archive_file.handler.output_base64sha256
-  timeout          = 10
+  function_name                    = "${local.name_prefix}-handler-${local.suffix}"
+  role                             = aws_iam_role.lambda.arn
+  handler                          = "handler.handler"
+  runtime                          = "python3.12"
+  filename                         = data.archive_file.handler.output_path
+  source_code_hash                 = data.archive_file.handler.output_base64sha256
+  timeout = 10
+  # Reserved concurrency omitted: this sandbox account's unreserved floor is 10,
+  # so reserving would fail PutFunctionConcurrency. DLQ still closes GAP-06.
 
   environment {
     variables = {
@@ -205,8 +228,23 @@ resource "aws_lambda_function" "intake" {
     }
   }
 
-  # GAP-05: no vpc_config block. Learner expected to add one referencing
-  # aws_subnet.private[*] and a hardened security group.
+  # GAP-05 closed: run inside the starter VPC (HIPAA 164.312(e)(1)).
+  vpc_config {
+    subnet_ids         = aws_subnet.private[*].id
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
+  # GAP-06 closed (partial): DLQ + reserved concurrency.
+  dead_letter_config {
+    target_arn = aws_sqs_queue.intake_dlq.arn
+  }
+
+  depends_on = [
+    aws_iam_role_policy_attachment.lambda_vpc,
+    aws_vpc_endpoint.s3,
+    aws_vpc_endpoint.dynamodb,
+    aws_iam_role_policy.lambda_dlq,
+  ]
 }
 
 ######################################################################
@@ -237,7 +275,28 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.intake.id
   name        = "$default"
   auto_deploy = true
-  # GAP-08: no access_log_settings. Learner expected to wire CloudWatch logs.
+
+  # GAP-08 closed: access logs + throttle (HIPAA 164.312(b)).
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.apigw.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+    })
+  }
+
+  default_route_settings {
+    throttling_burst_limit = 20
+    throttling_rate_limit  = 10
+  }
+
+  depends_on = [aws_cloudwatch_log_group.apigw]
 }
 
 resource "aws_lambda_permission" "apigw" {

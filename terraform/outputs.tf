@@ -24,3 +24,22 @@ output "vpc_id" {
 output "private_subnet_ids" {
   value = aws_subnet.private[*].id
 }
+
+output "phi_kms_key_arn" {
+  value       = aws_kms_key.phi.arn
+  description = "Customer CMK wrapping PHI stores and the evidence vault."
+}
+
+output "evidence_bucket" {
+  value       = aws_s3_bucket.evidence.id
+  description = "Object Lock evidence vault bucket."
+}
+
+output "grc_gate_role_arn" {
+  value       = aws_iam_role.grc_gate.arn
+  description = "GitHub Actions OIDC role for the GRC gate."
+}
+
+output "cloudtrail_name" {
+  value = aws_cloudtrail.mgmt.name
+}
