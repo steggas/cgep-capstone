@@ -1,0 +1,135 @@
+# Capstone GRC gate: Plan → Policy check → Apply (main) → Sign → Upload
+name: grc-gate
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+  TF_WORKING_DIR: terraform
+
+jobs:
+  grc-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Install Conftest
+        run: |
+          curl -fsSL https://github.com/open-policy-agent/conftest/releases/download/v0.50.0/conftest_0.50.0_Linux_x86_64.tar.gz \
+            | tar -xz -C /usr/local/bin conftest
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.2.4"
+
+      - name: Plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init -input=false
+          terraform validate
+          terraform plan -out=tfplan -input=false -no-color | tee plan.txt
+          terraform show -json tfplan > plan.json
+
+      - name: Policy check
+        id: conftest
+        run: |
+          chmod +x scripts/policy-gate.sh
+          # policy-gate expects tfplan in the workspace
+          ./scripts/policy-gate.sh --workspace "$TF_WORKING_DIR"
+
+      - name: Apply
+        id: apply
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Sign
+        id: sign
+        if: always() && steps.conftest.outcome == 'success'
+        env:
+          VAULT: ${{ vars.EVIDENCE_VAULT }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/run
+          cp "$TF_WORKING_DIR/plan.json" evidence/run/plan.json
+          cp "$TF_WORKING_DIR/plan.txt" evidence/run/plan.txt 2>/dev/null || true
+          cp evidence/policy-gate/conftest-results.json evidence/run/ 2>/dev/null || true
+
+          if command -v sha256sum >/dev/null 2>&1; then SHASUM="sha256sum"
+          elif command -v shasum >/dev/null 2>&1; then SHASUM="shasum -a 256"
+          else echo "Need sha256sum or shasum" >&2; exit 2; fi
+
+          BUNDLE="evidence-${RUN_ID}-${SHA}.tar.gz"
+          ( cd evidence/run && tar czf "../../${BUNDLE}" . )
+          $SHASUM "${BUNDLE}" | awk '{print $1}' > "${BUNDLE}.sha256"
+          cosign sign-blob --yes --bundle "${BUNDLE}.sig.bundle" "${BUNDLE}"
+          echo "BUNDLE=${BUNDLE}" >> "$GITHUB_ENV"
+
+      - name: Upload
+        if: always() && steps.sign.outcome == 'success'
+        env:
+          VAULT: ${{ vars.EVIDENCE_VAULT }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          KEY_PREFIX="runs/${RUN_ID}"
+          aws s3 cp "${BUNDLE}"            "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}"
+          aws s3 cp "${BUNDLE}.sha256"     "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}.sha256"
+          aws s3 cp "${BUNDLE}.sig.bundle" "s3://${VAULT}/${KEY_PREFIX}/${BUNDLE}.sig.bundle"
+
+          VERSION_ID=$(aws s3api head-object --bucket "${VAULT}" --key "${KEY_PREFIX}/${BUNDLE}" --query VersionId --output text)
+          cat > receipt.json <<EOF
+          {
+            "run_id":"${RUN_ID}",
+            "vault":"${VAULT}",
+            "bundle_key":"${KEY_PREFIX}/${BUNDLE}",
+            "version_id":"${VERSION_ID}",
+            "sha256":"$(cat ${BUNDLE}.sha256)",
+            "commit":"${SHA}"
+          }
+          EOF
+          aws s3 cp receipt.json "s3://${VAULT}/${KEY_PREFIX}/receipt.json"
+          mkdir -p evidence/receipts
+          cp receipt.json "evidence/receipts/receipt-${RUN_ID}.json"
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grc-evidence-${{ github.run_id }}
+          path: |
+            evidence/
+            receipt.json
+            evidence-*.tar.gz*
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Enforce gate
+        if: always()
+        run: test "${{ steps.conftest.outcome }}" = "success"
