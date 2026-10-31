@@ -1,80 +1,46 @@
-# cgep-app-starter
+# cgep-capstone — Acme Health Patient Intake (CGE-P)
 
-> Patient Intake API for "Acme Health". The deliberately-flawed workload your **CGE-P capstone** wraps with GRC controls.
+Fork of [`GRCEngClub/cgep-app-starter`](https://github.com/GRCEngClub/cgep-app-starter). Primary framework: **HIPAA Security Rule**. Design spine: [`DESIGN.md`](DESIGN.md). Graded reasoning: [`WRITEUP.md`](WRITEUP.md).
 
-## What this is
-
-A minimal AWS workload: VPC, Lambda, API Gateway, DynamoDB, S3. It ingests patient intake submissions over HTTPS. Think of it as a system you have just inherited from an engineering team and been asked to make audit-defensible.
-
-This repository ships **non-compliant on purpose**. Your job in the capstone is not to rewrite this app. Your job is to wrap it with the four CGE-P layers (Terraform GRC baseline, Rego policies, GitHub Actions evidence pipeline, OSCAL component) so the same workload becomes audit-defensible against HIPAA, SOC 2, and CMMC L2.
-
-## The deploy gate
-
-If you cannot deploy this starter, you cannot pass the capstone. Real GRC engineers inherit working systems. Step zero is making the system run.
+## Grader verification
 
 ```bash
-git clone https://github.com/GRCEngClub/cgep-app-starter
-cd cgep-app-starter
+# 1. Identity / vault
+aws sts get-caller-identity
+# Evidence vault: acme-health-evidence-a40865c5
+# Gate role:     arn:aws:iam::758496865249:role/cgep-capstone-grc-gate
 
-# Confirm you're authenticated to the right account:
-make creds AWS_PROFILE=<your-sandbox-profile>
+# 2. Chain of custody (signed main run)
+./scripts/verify-evidence.sh 41187275501 --vault acme-health-evidence-a40865c5
+# expect: Verified OK / CHAIN INTACT
 
-make deploy AWS_PROFILE=<your-sandbox-profile>
-make test    AWS_PROFILE=<your-sandbox-profile>
+# 3. Policy suite
+opa test ./policies -v
+# from a planned workspace:
+./scripts/policy-gate.sh --workspace terraform
+
+# 4. OSCAL
+trestle validate -f oscal/components/acme-intake.json
 ```
 
-> **AWS SSO note:** if your profile is SSO-based, Terraform's AWS provider can fail to read it directly with `failed to find SSO session section`. The Makefile's `eval $(aws configure export-credentials)` pattern handles this. If you're running `terraform` commands by hand, do the same export first.
-
-Expected output of `make test`:
-
-```json
-{
-    "submission_id": "f1e3...",
-    "status": "received"
-}
-```
-
-When you're done exploring: `make destroy`.
-
-## What you build on top
-
-Fork the repo into your own `cgep-capstone` and add:
-
-1. **Layer 1 — GRC baseline (Terraform).** KMS keys, an S3 evidence vault with Object Lock, a CloudTrail trail. Bring this starter's data stores under your CMK.
-2. **Layer 2 — OPA policy suite (Rego).** Five or more policies that catch the named gaps in [GAPS.md](GAPS.md). Each policy maps to at least one control from the framework you choose.
-3. **Layer 3 — GitHub Actions pipeline.** Plan → Conftest gate → apply → Cosign sign → upload to vault.
-4. **Layer 4 — OSCAL component.** A `component-definition.json` describing how your governed system implements its controls.
-
-Full brief: `docs/labs/07_01_capstone_brief.md` in the course content repo.
-
-## Framework mapping is required
-
-Your capstone must declare a primary framework: **HIPAA Security Rule**, **SOC 2 Trust Services Criteria**, or **CMMC Level 2**. Every policy carries at least one control ID from your chosen framework. Your OSCAL component's `control-implementations` reference your framework's catalog.
-
-A starter mapping is in [FRAMEWORKS.md](FRAMEWORKS.md). It is not the only valid mapping. You're expected to defend yours.
-
-## Cost
-
-Roughly $0 if destroyed within an hour. Lambda + API Gateway + DynamoDB + S3 are all pay-per-use, and an empty deployment generates no traffic. CloudTrail (which you add) costs cents.
+Green PRs: #1 (baseline), #2 (OIDC plan fix). Red PR left open: #3 (GAP-05 re-introduced).
 
 ## Layout
 
 ```
-cgep-app-starter/
-├── README.md            # this file
-├── WORKLOAD.md          # what the API does
-├── GAPS.md              # the named flaws your policies must catch
-├── FRAMEWORKS.md        # HIPAA / SOC 2 / CMMC mapping primer
-├── Makefile             # make deploy | test | destroy
-├── terraform/
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── lambda/handler.py
-└── test/
-    └── intake.sh
+terraform/          # starter workload + kms / evidence-vault / cloudtrail / oidc / hardening
+policies/           # six HIPAA Rego packages + tests
+scripts/            # policy-gate.sh, verify-evidence.sh, capture-evidence.sh
+.github/workflows/  # grc-gate.yml — Plan → Policy → Apply(main) → Sign → Upload
+oscal/              # component + HIPAA profile
 ```
 
-## License
+## Deploy the workload (step zero)
 
-MIT. Fork freely. Submissions remain learners' own work.
+```bash
+make creds AWS_PROFILE=default
+make deploy AWS_PROFILE=default
+make test   AWS_PROFILE=default
+```
+
+Destroy when finished exploring: `make destroy AWS_PROFILE=default` (after evidence is captured).

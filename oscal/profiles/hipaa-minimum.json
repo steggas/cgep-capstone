@@ -1,0 +1,30 @@
+{
+  "profile": {
+    "uuid": "d93ecd2a-3bc2-47c9-bda8-83a5ffad3480",
+    "metadata": {
+      "title": "Acme Health HIPAA minimum profile (capstone)",
+      "last-modified": "2026-10-31T09:10:00.000000+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.2.1"
+    },
+    "imports": [
+      {
+        "href": "https://csrc.nist.gov/pubs/sp/800/66/r2/final",
+        "include-controls": [
+          {
+            "with-ids": [
+              "hipaa-164-312-a-2-iv",
+              "hipaa-164-312-e-1",
+              "hipaa-164-308-a-7",
+              "hipaa-164-312-a-1",
+              "hipaa-164-312-b"
+            ]
+          }
+        ]
+      }
+    ],
+    "merge": {
+      "as-is": true
+    }
+  }
+}
