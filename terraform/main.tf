@@ -228,11 +228,8 @@ resource "aws_lambda_function" "intake" {
     }
   }
 
-  # GAP-05 closed: run inside the starter VPC (HIPAA 164.312(e)(1)).
-  vpc_config {
-    subnet_ids         = aws_subnet.private[*].id
-    security_group_ids = [aws_security_group.lambda.id]
-  }
+  # DEMO: intentionally remove vpc_config to trip GAP-05 policy (do not merge).
+  # vpc_config { ... }
 
   # GAP-06 closed (partial): DLQ + reserved concurrency.
   dead_letter_config {
