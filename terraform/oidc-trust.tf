@@ -1,10 +1,12 @@
 ######################################################################
 # GitHub Actions OIDC role for the capstone gate (plan / apply / vault write).
 # Reuses the account's existing GitHub OIDC provider from the labs.
+# ARN is constructed (not data-sourced) so the CI role does not need
+# iam:GetOpenIDConnectProvider — PowerUserAccess alone is enough to plan.
 ######################################################################
 
-data "aws_iam_openid_connect_provider" "github" {
-  arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+locals {
+  github_oidc_provider_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
 }
 
 resource "aws_iam_role" "grc_gate" {
@@ -14,7 +16,7 @@ resource "aws_iam_role" "grc_gate" {
     Version = "2012-10-17"
     Statement = [{
       Effect    = "Allow"
-      Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
+      Principal = { Federated = local.github_oidc_provider_arn }
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = {
