@@ -1,3 +1,6 @@
+# Trestle authoring workspace (validated copies live under oscal/)
+.trestle-work/
+
 # Terraform
 .terraform/
 *.tfstate

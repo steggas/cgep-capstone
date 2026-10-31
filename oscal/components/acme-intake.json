@@ -1,0 +1,224 @@
+{
+  "component-definition": {
+    "uuid": "3c10d851-57a3-4ddc-8d80-e09408df6365",
+    "metadata": {
+      "title": "Acme Health Patient Intake \u2014 governed system",
+      "last-modified": "2026-10-31T09:10:00.000000+00:00",
+      "version": "1.0.0",
+      "oscal-version": "1.2.1",
+      "parties": [
+        {
+          "uuid": "f277760e-9092-4d40-943d-a131976f3f0c",
+          "type": "organization",
+          "name": "Acme Health (CGE-P capstone)"
+        }
+      ]
+    },
+    "components": [
+      {
+        "uuid": "12786bdd-e579-450d-a570-49b94302e66e",
+        "type": "software",
+        "title": "acme-health-patient-intake",
+        "description": "Patient Intake API (fork of cgep-app-starter) plus the GRC baseline: customer CMK, Object Lock evidence vault, multi-region CloudTrail, gap-closing Terraform overrides, HIPAA Rego gate, and Cosign-signed evidence on every green pipeline run.",
+        "purpose": "Make the telehealth intake workload audit-defensible under the HIPAA Security Rule without slowing engineering merges.",
+        "responsible-roles": [
+          {
+            "role-id": "provider",
+            "party-uuids": [
+              "f277760e-9092-4d40-943d-a131976f3f0c"
+            ]
+          }
+        ],
+        "control-implementations": [
+          {
+            "uuid": "aa2fbce8-8b5a-4648-ad35-a4b95cb87078",
+            "source": "https://csrc.nist.gov/pubs/sp/800/66/r2/final",
+            "description": "HIPAA Security Rule technical safeguards implemented for the Patient Intake system. Catalog: NIST SP 800-66 Rev. 2 (Implementing the HIPAA Security Rule). 164.x citations live in props.",
+            "props": [
+              {
+                "name": "framework",
+                "value": "hipaa-security-rule"
+              }
+            ],
+            "implemented-requirements": [
+              {
+                "uuid": "c1b1a027-c324-4347-9ebd-7bc67cadea8b",
+                "control-id": "hipaa-164-312-a-2-iv",
+                "description": "Encryption and decryption (addressable). PHI at rest on the uploads bucket and DynamoDB table is encrypted with customer CMK aws_kms_key.phi (rotation enabled). Closes GAP-01 and GAP-02 in Terraform; Rego packages compliance.hipaa.s3_cmk and compliance.hipaa.ddb_cmk refuse plans that drop the CMK.",
+                "props": [
+                  {
+                    "name": "hipaa-citation",
+                    "value": "164.312(a)(2)(iv)"
+                  },
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-01"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-02"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_kms_key.phi"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_s3_bucket_server_side_encryption_configuration.uploads"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_dynamodb_table.intake"
+                  }
+                ],
+                "links": [
+                  {
+                    "rel": "evidence",
+                    "href": "s3://acme-health-evidence-a40865c5/runs/41187275501/evidence-41187275501-7f112c15fa8852f13bbf64e1de82625e7c5d8003.tar.gz",
+                    "text": "Signed main-branch evidence bundle (CHAIN INTACT for run 41187275501)."
+                  }
+                ]
+              },
+              {
+                "uuid": "04a563fb-6e76-4d40-86b8-d3a763a90638",
+                "control-id": "hipaa-164-312-e-1",
+                "description": "Transmission security. S3 bucket policies deny aws:SecureTransport=false on uploads, evidence, and CloudTrail buckets (GAP-03). Intake Lambda runs inside the starter VPC private subnets with S3/DynamoDB gateway endpoints (GAP-05).",
+                "props": [
+                  {
+                    "name": "hipaa-citation",
+                    "value": "164.312(e)(1)"
+                  },
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-03"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-05"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_s3_bucket_policy.uploads"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_lambda_function.intake"
+                  }
+                ],
+                "links": [
+                  {
+                    "rel": "evidence",
+                    "href": "s3://acme-health-evidence-a40865c5/runs/41187275501/evidence-41187275501-7f112c15fa8852f13bbf64e1de82625e7c5d8003.tar.gz",
+                    "text": "Signed plan showing TLS denies and Lambda vpc_config."
+                  }
+                ]
+              },
+              {
+                "uuid": "5bfc2503-7c5c-460d-bc68-24366949fc46",
+                "control-id": "hipaa-164-308-a-7",
+                "description": "Contingency plan / data backup. Uploads bucket versioning enabled so PHI overwrites are recoverable (GAP-04).",
+                "props": [
+                  {
+                    "name": "hipaa-citation",
+                    "value": "164.308(a)(7)"
+                  },
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-04"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_s3_bucket_versioning.uploads"
+                  }
+                ],
+                "links": [
+                  {
+                    "rel": "evidence",
+                    "href": "s3://acme-health-evidence-a40865c5/runs/41187275501/evidence-41187275501-7f112c15fa8852f13bbf64e1de82625e7c5d8003.tar.gz",
+                    "text": "Signed plan with versioning Enabled on uploads."
+                  }
+                ]
+              },
+              {
+                "uuid": "e6810b91-ad63-4e42-b9df-5b72f8800a46",
+                "control-id": "hipaa-164-312-a-1",
+                "description": "Access control. Lambda inline policy is least-privilege (PutItem/GetItem/UpdateItem/DescribeTable; PutObject/GetObject) instead of dynamodb:* / s3:* (GAP-07).",
+                "props": [
+                  {
+                    "name": "hipaa-citation",
+                    "value": "164.312(a)(1)"
+                  },
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-07"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_iam_role_policy.lambda_inline"
+                  }
+                ],
+                "links": [
+                  {
+                    "rel": "evidence",
+                    "href": "s3://acme-health-evidence-a40865c5/runs/41187275501/evidence-41187275501-7f112c15fa8852f13bbf64e1de82625e7c5d8003.tar.gz",
+                    "text": "Signed plan with narrowed IAM actions."
+                  }
+                ]
+              },
+              {
+                "uuid": "b09daa21-654b-4851-802e-bb1bfeb17a77",
+                "control-id": "hipaa-164-312-b",
+                "description": "Audit controls. Multi-region CloudTrail with log-file validation writes management events. API Gateway HTTP stage emits access logs to a KMS-encrypted CloudWatch log group and applies default-route throttling (GAP-08).",
+                "props": [
+                  {
+                    "name": "hipaa-citation",
+                    "value": "164.312(b)"
+                  },
+                  {
+                    "name": "implementation-status",
+                    "value": "implemented"
+                  },
+                  {
+                    "name": "gap",
+                    "value": "GAP-08"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_cloudtrail.mgmt"
+                  },
+                  {
+                    "name": "terraform-resource",
+                    "value": "aws_apigatewayv2_stage.default"
+                  }
+                ],
+                "links": [
+                  {
+                    "rel": "evidence",
+                    "href": "s3://acme-health-evidence-a40865c5/runs/41187275501/evidence-41187275501-7f112c15fa8852f13bbf64e1de82625e7c5d8003.tar.gz",
+                    "text": "Signed plan including CloudTrail and API access_log_settings."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

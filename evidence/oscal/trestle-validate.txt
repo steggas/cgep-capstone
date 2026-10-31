@@ -1,0 +1,2 @@
+VALID: Model F:\GRC Engineering\cgep-capstone\.trestle-work\component-definitions\acme-intake\component-definition.json passed the Validator to confirm the model passes all registered validation tests.
+VALID: Model F:\GRC Engineering\cgep-capstone\.trestle-work\profiles\hipaa-minimum\profile.json passed the Validator to confirm the model passes all registered validation tests.
